@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime SQLite files (WAL/SHM included) — never commit customer data.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+.env
+.DS_Store

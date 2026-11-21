@@ -1,0 +1,33 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: weekly-compare:latest
+    container_name: weekly-compare
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      # Named volume path inside the container; SQLite runs in WAL mode there.
+      DATABASE_PATH: /app/data/reports.db
+      # Override in production: docker compose run --rm -e SECRET_KEY=... web ...
+      SECRET_KEY: "${SECRET_KEY:-change-me-before-deploying}"
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-4194304}"
+    volumes:
+      # Named volume (not a bind mount) avoids SQLite permission/locking issues
+      # on the host filesystem.  It survives `docker compose down`.
+      - report-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  report-data:

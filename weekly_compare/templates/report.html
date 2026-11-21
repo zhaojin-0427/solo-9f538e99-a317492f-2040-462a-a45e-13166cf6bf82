@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <h1>{{ report.store_code }} · {{ report.store_name }}</h1>
+    <p class="hint">{{ report.business_date }}（{{ report.weekday }}）当前生效日报</p>
+  </div>
+
+  <div class="card">
+    <dl class="facts">
+      <div><dt>修订号</dt><dd>{{ report.revision }}</dd></div>
+      <div><dt>已报齐小时数</dt><dd>{{ report.complete_hour_count }}</dd></div>
+      <div><dt>已报齐时段</dt><dd>{{ hours | map(attribute=0) | list | hours }}</dd></div>
+      <div><dt>销售额（元）</dt><dd>{{ report.total_sales_cents | yuan }}</dd></div>
+      <div><dt>小票行数</dt><dd>{{ report.receipt_line_count }}</dd></div>
+      <div><dt>生成时间</dt><dd>{{ report.updated_at | ts }}</dd></div>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>各营业小时销售额</h2>
+    {% if hours %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">小时</th>
+              <th scope="col" class="num">销售额（元）</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for hour, cents in hours %}
+              <tr>
+                <td>{{ hour }}:00</td>
+                <td class="num">{{ cents | yuan }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <th scope="row">合计（仅报齐小时）</th>
+              <td class="num">{{ report.total_sales_cents | yuan }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">该日报没有报齐的营业小时。</p>
+    {% endif %}
+  </div>
+
+  <div class="actions">
+    <a class="button" href="{{ url_for('main.import_form', store_code=report.store_code, business_date=report.business_date) }}">用更高修订号更正</a>
+    <a class="button-secondary" href="{{ url_for('main.index') }}">返回列表</a>
+  </div>
+  <p class="hint">更正会生成新的修订版本，不重扫旧小票；旧版本仅作为历史记录保留，不参与对比。</p>
+{% endblock %}

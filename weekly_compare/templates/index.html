@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <h1>已生效日报</h1>
+    <p class="hint">列表只显示每个门店每天当前生效的修订版本。导入进行中时，这里仍是上一次已提交的结果。</p>
+  </div>
+
+  <form class="card filter-form" method="get" action="{{ url_for('main.index') }}">
+    <label>
+      营业日期
+      <input type="date" name="date" value="{{ filters.business_date }}">
+    </label>
+    <label>
+      门店编码
+      <input type="text" name="q" value="{{ filters.code_query }}" placeholder="模糊匹配">
+    </label>
+    <button type="submit">筛选</button>
+    <a class="button-secondary" href="{{ url_for('main.index') }}">重置</a>
+  </form>
+
+  {% if filter_error %}
+    <div class="alert alert-error" role="alert">{{ filter_error }}</div>
+  {% endif %}
+
+  <div class="card">
+    {% if reports %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">门店编码</th>
+              <th scope="col">门店名称</th>
+              <th scope="col">日期</th>
+              <th scope="col">星期</th>
+              <th scope="col" class="num">修订号</th>
+              <th scope="col" class="num">报齐小时数</th>
+              <th scope="col" class="num">销售额（元）</th>
+              <th scope="col" class="num">小票行数</th>
+              <th scope="col">更新时间</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for report in reports %}
+              <tr>
+                <td>{{ report.store_code }}</td>
+                <td>{{ report.store_name }}</td>
+                <td>{{ report.business_date }}</td>
+                <td>{{ report.weekday }}</td>
+                <td class="num">{{ report.revision }}</td>
+                <td class="num">{{ report.complete_hour_count }}</td>
+                <td class="num">{{ report.total_sales_cents | yuan }}</td>
+                <td class="num">{{ report.receipt_line_count }}</td>
+                <td>{{ report.updated_at | ts }}</td>
+                <td>
+                  <a href="{{ url_for('main.report_detail', store_code=report.store_code, business_date=report.business_date) }}">明细</a>
+                  ·
+                  <a href="{{ url_for('main.import_form', store_code=report.store_code, business_date=report.business_date) }}">更正</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">没有符合条件的日报。先<a href="{{ url_for('main.import_form') }}">导入一份日报</a>。</p>
+    {% endif %}
+  </div>
+{% endblock %}

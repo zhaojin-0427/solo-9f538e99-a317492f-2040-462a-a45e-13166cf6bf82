@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>导入 / 更正日报</h1>
+  <p class="hint">
+    按门店 + 日期导入。再次导入必须使用<strong>更高的修订号</strong>，整日替换原日报；
+    可以缩减已报齐的营业小时。导入失败时原日报与对比结果保持不变。
+  </p>
+
+  {% if errors %}
+    <div class="alert alert-error" role="alert">
+      <strong>导入未生效（原日报保持不变）</strong>
+      <ul>
+        {% for message in errors %}<li>{{ message }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form class="card form-grid" method="post" action="{{ url_for('main.import_submit') }}"
+        enctype="multipart/form-data" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label>
+      门店编码
+      <input type="text" name="store_code" value="{{ prefill.store_code }}" required
+             maxlength="40" placeholder="例如 S001">
+    </label>
+    <label>
+      门店名称
+      <input type="text" name="store_name" value="{{ prefill.store_name }}" maxlength="80"
+             placeholder="首次导入必填">
+    </label>
+    <label>
+      营业日期
+      <input type="date" name="business_date" value="{{ prefill.business_date }}" required>
+    </label>
+    <label>
+      修订号
+      <input type="number" name="revision" value="{{ prefill.revision }}" min="1" max="9999999" required>
+      <span class="field-hint">必须高于该店该日现有修订号</span>
+    </label>
+    <label class="span-2">
+      已报齐的营业小时
+      <input type="text" name="complete_hours" value="{{ prefill.complete_hours }}" required
+             placeholder="例如 9-17 或 9-12,14-17（含端点，0–23）">
+      <span class="field-hint">只统计这些小时；报齐但没有小票的小时按 0 元计。</span>
+    </label>
+
+    <fieldset class="span-2">
+      <legend>小票 CSV（两列：小时,金额分）</legend>
+      <label class="span-2">
+        上传文件
+        <input type="file" name="receipts" accept=".csv,text/csv">
+      </label>
+      <label class="span-2">
+        或直接粘贴
+        <textarea name="receipt_text" rows="8" spellcheck="false"
+                  placeholder="小时内,金额分&#10;9,1200&#10;9,800&#10;10,0">{{ prefill.receipt_text }}</textarea>
+      </label>
+      <p class="field-hint span-2">
+        每行一条小票：小时与金额（整数分）。表头可省略。当天报齐但没有任何小票时，上传只有表头的文件即可。
+      </p>
+    </fieldset>
+
+    <div class="form-actions span-2">
+      <button type="submit">提交日报</button>
+    </div>
+  </form>
+
+  {% if stores %}
+    <div class="card">
+      <h2>已有门店</h2>
+      <div class="chip-list">
+        {% for store in stores %}
+          <a class="chip" href="{{ url_for('main.import_form', store_code=store.code) }}">{{ store.code }} · {{ store.name }}</a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

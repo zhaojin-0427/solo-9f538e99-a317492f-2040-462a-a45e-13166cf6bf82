@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or "周报同店对比" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('main.index') }}">门店周报 · 同店对比</a>
+    <nav>
+      <a href="{{ url_for('main.index') }}">日报列表</a>
+      <a href="{{ url_for('main.import_form') }}">导入日报</a>
+      <a href="{{ url_for('main.compare_page') }}">同店对比</a>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}" role="status">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>金额单位：元（数据库以分存储）。同店对比按门店 + 星期 + 小时配对。</span>
+  </footer>
+</body>
+</html>

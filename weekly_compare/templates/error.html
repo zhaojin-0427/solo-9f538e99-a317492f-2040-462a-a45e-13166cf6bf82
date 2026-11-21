@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="card error-card">
+    <h1>{{ title or "出错了" }}</h1>
+    <p class="error-message">{{ message }}</p>
+    {% if details %}
+      <ul>
+        {% for detail in details %}<li>{{ detail }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+    <p class="error-code">错误代码：{{ code }}</p>
+    <div class="actions">
+      <a class="button-secondary" href="{{ url_for('main.index') }}">返回日报列表</a>
+      <a class="button-secondary" href="{{ url_for('main.compare_page') }}">去同店对比</a>
+    </div>
+  </div>
+{% endblock %}

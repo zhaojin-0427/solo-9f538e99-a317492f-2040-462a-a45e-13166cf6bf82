@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <h1>同店对比</h1>
+    <p class="hint">选择两个周一，按同一门店、同一星期、同一小时配对。只统计两周都报齐的营业小时；报齐但无小票的小时按 0 计。</p>
+  </div>
+
+  <form class="card filter-form" method="get" action="{{ url_for('main.compare_page') }}">
+    <label>
+      第一个周一
+      <input type="date" name="date_a" value="{{ date_a }}" required>
+    </label>
+    <label>
+      第二个周一
+      <input type="date" name="date_b" value="{{ date_b }}" required>
+    </label>
+    <button type="submit">开始对比</button>
+  </form>
+
+  {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if result %}
+    <div class="card">
+      <div class="compare-meta">
+        <span>对比周期：<strong>{{ result.date_a.isoformat() }}</strong>（{{ result.date_a | weekday }}）
+          对比 <strong>{{ result.date_b.isoformat() }}</strong>（{{ result.date_b | weekday }}）</span>
+      </div>
+
+      {% if not result.has_rows %}
+        <p class="empty">这两天的日报都还没有导入，暂无可比数据。</p>
+      {% else %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">门店</th>
+                <th scope="col">门店名称</th>
+                <th scope="col" class="num">可比小时数</th>
+                <th scope="col" class="num">{{ result.date_a.isoformat() }} 销售额</th>
+                <th scope="col" class="num">{{ result.date_b.isoformat() }} 销售额</th>
+                <th scope="col" class="num">差额（后−前）</th>
+                <th scope="col" class="num">变化</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in result.rows %}
+                <tr {% if row.comparable_hours == 0 %}class="row-muted"{% endif %}>
+                  <td><a href="{{ url_for('main.report_detail', store_code=row.store_code, business_date=result.date_b.isoformat()) }}">{{ row.store_code }}</a></td>
+                  <td>{{ row.store_name }}</td>
+                  <td class="num">{{ row.comparable_hours }}</td>
+                  <td class="num">
+                    {% if row.revision_a is none %}<span class="missing">无日报</span>
+                    {% elif row.comparable_hours == 0 %}<span class="missing">—</span>
+                    {% else %}{{ row.sales_a_cents | yuan }}{% endif %}
+                  </td>
+                  <td class="num">
+                    {% if row.revision_b is none %}<span class="missing">无日报</span>
+                    {% elif row.comparable_hours == 0 %}<span class="missing">—</span>
+                    {% else %}{{ row.sales_b_cents | yuan }}{% endif %}
+                  </td>
+                  <td class="num">
+                    {% if row.has_both_reports and row.comparable_hours > 0 %}{{ row.difference_cents | yuan_signed }}{% else %}<span class="missing">—</span>{% endif %}
+                  </td>
+                  <td class="num">
+                    {% if not row.has_both_reports %}
+                      <span class="missing">仅一周有日报</span>
+                    {% elif row.comparable_hours == 0 %}
+                      <span class="missing">无可比小时</span>
+                    {% else %}
+                      {{ row.sales_a_cents | pct(row.sales_b_cents) }}
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <th scope="row" colspan="2">全店合计</th>
+                <td class="num">{{ result.total.comparable_hours }}</td>
+                <td class="num">{{ result.total.sales_a_cents | yuan }}</td>
+                <td class="num">{{ result.total.sales_b_cents | yuan }}</td>
+                <td class="num">{{ result.total.difference_cents | yuan_signed }}</td>
+                <td class="num">
+                  {% if result.total_has_comparable_hours %}
+                    {{ result.total.sales_a_cents | pct(result.total.sales_b_cents) }}
+                  {% else %}
+                    —
+                  {% endif %}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <p class="hint">各店数字与全店合计来自同一次查询、同一个已提交快照。导入期间仍可查看旧的对比结果。</p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
