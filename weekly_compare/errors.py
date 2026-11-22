@@ -55,3 +55,22 @@ class ReportNotFound(AppError):
 
     code = "report_missing"
     http_status = 404
+
+
+class ReconciliationRejected(AppError):
+    """The payment-slip reconciliation cannot be built or saved."""
+
+    code = "reconciliation_rejected"
+    http_status = 422
+
+
+class ReportChanged(AppError):
+    """The daily report moved to another revision after the page was rendered.
+
+    Saving is refused so a reconciliation can never be stored against a
+    revision the finance user did not review.  The previously saved
+    reconciliation (if any) is left untouched.
+    """
+
+    code = "report_changed"
+    http_status = 409

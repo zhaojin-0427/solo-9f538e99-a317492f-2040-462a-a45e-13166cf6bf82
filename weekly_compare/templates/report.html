@@ -50,6 +50,7 @@
 
   <div class="actions">
     <a class="button" href="{{ url_for('main.import_form', store_code=report.store_code, business_date=report.business_date) }}">用更高修订号更正</a>
+    <a class="button-secondary" href="{{ url_for('main.reconcile_page', store_code=report.store_code, business_date=report.business_date) }}">交款单对账</a>
     <a class="button-secondary" href="{{ url_for('main.index') }}">返回列表</a>
   </div>
   <p class="hint">更正会生成新的修订版本，不重扫旧小票；旧版本仅作为历史记录保留，不参与对比。</p>

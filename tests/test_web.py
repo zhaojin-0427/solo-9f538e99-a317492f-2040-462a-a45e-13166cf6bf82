@@ -67,7 +67,7 @@ class WebTestCase(unittest.TestCase):
 
 class PageTests(WebTestCase):
     def test_empty_pages_render(self):
-        for path in ("/", "/import", "/compare"):
+        for path in ("/", "/import", "/compare", "/reconcile", "/reconciliations"):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
 

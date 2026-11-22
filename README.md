@@ -20,6 +20,30 @@ Flask + SQLite 的单店日报导入与「两个周一」同店对比工具。
 | 对比与更正都不重扫旧小票 | 对比只读 `report_hours`；更正写新版本 |
 | 一次查询中的各店数字与全店合计取自同一提交状态 | 单条 SQL（`UNION ALL` 出合计）+ 单个读事务 |
 
+## 交款单对账
+
+旧交款单丢了整点截账时间，只剩按顺序排列的批次号和净额。`/reconcile` 页面：
+
+| 规则 | 实现位置 |
+| --- | --- |
+| 选门店、日期、交款单覆盖的起止小时（两端都计入） | `/reconcile` 表单 → `reconciliation.parse_request` |
+| 按顺序录入批次号和净额（整数分，可为负） | 每行 `批次号,净额分`，行序即批次顺序 |
+| 所选小时依次划给各批：每小时只归一批，每批占一段连续小时 | `reconciliation.analyse` 的动态规划 |
+| 段内销售额之和必须等于批次净额 | 前缀和 + `reachable` 表 |
+| 有未报齐的小时：列出缺失小时并停止对账 | `Analysis.missing_hours` / `stopped_for_missing` |
+| 已报齐的零销售小时照常参与 | `report_hours` 里的 0 与其它小时一视同仁 |
+| 逐批列出所有完整方案中可能的最后小时 | `_build_candidates`（正反两向可达性） |
+| 可填已查实的截止小时（第几批、该批最后小时）后再算，无解时提示 | `pinned_batch` / `pinned_hour`，`plan_count == 0` 显示「无解」 |
+| 只有切分唯一且日报仍是页面所示修订号时才可保存/覆盖 | `save_reconciliation` 在 `BEGIN IMMEDIATE` 内复核修订号 |
+| 页面列出已存结果的日报修订号和各批覆盖小时 | `/reconcile` 的「已存对账结果」、`/reconciliations` |
+| 日报更正后原结果保留并标为待复核 | `StoredReconciliation.needs_review`（比较 `report_version_id`） |
+| 保存时日报已换版：提示重算，原记录照旧 | `ReportChanged`（409），不写入任何行 |
+
+每个门店每天最多一条对账结果（`reconciliations` 唯一约束）；保存会整条覆盖旧结果。
+日报一旦被更高修订号替换，已存结果自动显示为「待复核」，但仍按保存时的报表修订号保留。
+
+对账不依赖「周一」限制，任意营业日均可使用；日期与门店必须在日报中已存在。
+
 ## 本地运行
 
 ```bash
@@ -57,8 +81,12 @@ docker compose logs -f
 | GET | `/import` | 导入表单（带现有修订号则预填 +1） |
 | POST | `/import` | 表单导入（文件或粘贴） |
 | GET | `/reports/<store_code>/<date>` | 单份日报的各小时金额 |
+| GET | `/reconcile` | 交款单对账表单（可带 `store_code` / `business_date` 查看已存结果） |
+| POST | `/reconcile` | 计算（`action=calculate`）或保存（`action=save` + `expected_revision`） |
+| GET | `/reconciliations` | 已存对账结果列表（修订号、状态、各批覆盖小时） |
 | GET | `/compare?date_a=&date_b=` | 同店对比页 |
 | GET | `/api/compare?date_a=&date_b=` | 对比 JSON（含 `total`） |
+| GET | `/api/reconciliations` | 已存对账结果 JSON |
 | GET | `/api/reports?business_date=&store_code=` | 当前日报 JSON |
 | POST | `/api/import` | 导入 JSON 响应 |
 | GET | `/api/csrf` | 取 CSRF token（同时下发会话 cookie） |
@@ -82,7 +110,9 @@ python3 -m unittest discover -s tests -t . -v
 
 覆盖：CSV/小时解析、修订替换与拒绝、失败回滚（含事务中途数据库报错）、
 可比小时配对、报齐无小票计零、各店合计等于全店合计、单条 SQL 快照、
-WAL 下导入未提交时读旧值、HTTP 页面/API/CSRF/413。
+WAL 下导入未提交时读旧值、HTTP 页面/API/CSRF/413；交款单对账的批次解析、
+唯一/多解/无解、缺失小时停止、零销售小时参与、已查实截止小时、负数净额、
+保存前置条件、日报更正后的待复核与换版拒存（HTTP 与 JSON）。
 
 ## 已知限制
 

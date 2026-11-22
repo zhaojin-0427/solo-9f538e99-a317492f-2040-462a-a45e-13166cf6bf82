@@ -63,12 +63,37 @@ CREATE TABLE IF NOT EXISTS current_reports (
     PRIMARY KEY (store_id, business_date)
 );
 
+CREATE TABLE IF NOT EXISTS reconciliations (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id           INTEGER NOT NULL REFERENCES stores(id),
+    business_date      TEXT NOT NULL,
+    report_version_id  INTEGER NOT NULL REFERENCES report_versions(id),
+    start_hour         INTEGER NOT NULL CHECK (start_hour BETWEEN 0 AND 23),
+    end_hour           INTEGER NOT NULL CHECK (end_hour BETWEEN start_hour AND 23),
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    UNIQUE (store_id, business_date)
+);
+
+CREATE TABLE IF NOT EXISTS reconciliation_batches (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    reconciliation_id  INTEGER NOT NULL REFERENCES reconciliations(id) ON DELETE CASCADE,
+    position           INTEGER NOT NULL CHECK (position >= 0),
+    batch_no           TEXT NOT NULL,
+    amount_cents       INTEGER NOT NULL,
+    start_hour         INTEGER NOT NULL CHECK (start_hour BETWEEN 0 AND 23),
+    end_hour           INTEGER NOT NULL CHECK (end_hour BETWEEN start_hour AND 23),
+    UNIQUE (reconciliation_id, position)
+);
+
 CREATE INDEX IF NOT EXISTS idx_report_versions_store_date
     ON report_versions (store_id, business_date);
 CREATE INDEX IF NOT EXISTS idx_receipt_lines_version_hour
     ON receipt_lines (report_version_id, hour);
 CREATE INDEX IF NOT EXISTS idx_current_reports_date
     ON current_reports (business_date);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_batches_rec
+    ON reconciliation_batches (reconciliation_id, position);
 """
 
 

@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <h1>已存对账结果</h1>
+    <p class="hint">每个门店每天最多一条对账结果。日报更正后，原结果保留并标为待复核。</p>
+  </div>
+
+  <div class="card">
+    {% if records %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col">门店编码</th>
+              <th scope="col">门店名称</th>
+              <th scope="col">日期</th>
+              <th scope="col">星期</th>
+              <th scope="col" class="num">对账时修订号</th>
+              <th scope="col" class="num">当前修订号</th>
+              <th scope="col">状态</th>
+              <th scope="col">交款单小时</th>
+              <th scope="col">各批覆盖小时</th>
+              <th scope="col" class="num">批次数</th>
+              <th scope="col">保存时间</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rec in records %}
+              <tr>
+                <td>{{ rec.store_code }}</td>
+                <td>{{ rec.store_name }}</td>
+                <td>{{ rec.business_date }}</td>
+                <td>{{ rec.weekday }}</td>
+                <td class="num">{{ rec.report_revision }}</td>
+                <td class="num">{{ rec.current_revision if rec.current_revision is not none else "—" }}</td>
+                <td>
+                  {% if rec.needs_review %}
+                    <span class="badge badge-warn">待复核</span>
+                  {% else %}
+                    <span class="badge badge-ok">一致</span>
+                  {% endif %}
+                </td>
+                <td>{{ rec.start_hour }}:00–{{ rec.end_hour }}:00</td>
+                <td>
+                  {% for batch in rec.batches %}
+                    <div class="batch-line">
+                      <span class="batch-no">{{ batch.batch_no }}</span>
+                      {% if batch.start_hour == batch.end_hour %}{{ batch.start_hour }}:00
+                      {% else %}{{ batch.start_hour }}:00–{{ batch.end_hour }}:00{% endif %}
+                    </div>
+                  {% endfor %}
+                </td>
+                <td class="num">{{ rec.batches | length }}</td>
+                <td>{{ rec.updated_at | ts }}</td>
+                <td>
+                  <a href="{{ url_for('main.reconcile_page', store_code=rec.store_code, business_date=rec.business_date) }}">查看</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">还没有保存过对账结果。先<a href="{{ url_for('main.reconcile_page') }}">新建一次对账</a>。</p>
+    {% endif %}
+  </div>
+{% endblock %}

@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block content %}
+  <div class="page-head">
+    <h1>交款单对账</h1>
+    <p class="hint">
+      旧交款单只留下按顺序排列的批次号和净额。选择门店、日期与交款单覆盖的起止小时
+      （两端都计入），再按顺序录入批次号和净额（整数分，可为负），即可把所选小时依次切给各批。
+    </p>
+  </div>
+
+  {% if errors %}
+    <div class="alert alert-error" role="alert">
+      <strong>对账未完成</strong>
+      <ul>
+        {% for message in errors %}<li>{{ message }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form class="card form-grid" method="post" action="{{ url_for('main.reconcile_submit') }}"
+        autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <label>
+      门店
+      <select name="store_code" required>
+        <option value="">请选择门店</option>
+        {% for store in stores %}
+          <option value="{{ store.code }}" {% if prefill.store_code|lower == store.code|lower %}selected{% endif %}>
+            {{ store.code }} · {{ store.name }}
+          </option>
+        {% endfor %}
+      </select>
+      {% if not stores %}
+        <span class="field-hint">还没有门店，请先<a href="{{ url_for('main.import_form') }}">导入日报</a>。</span>
+      {% endif %}
+    </label>
+    <label>
+      营业日期
+      <input type="date" name="business_date" value="{{ prefill.business_date }}" required>
+    </label>
+    <label>
+      交款单起始小时（含）
+      <input type="number" name="start_hour" value="{{ prefill.start_hour }}" min="0" max="23" required>
+    </label>
+    <label>
+      交款单结束小时（含）
+      <input type="number" name="end_hour" value="{{ prefill.end_hour }}" min="0" max="23" required>
+    </label>
+
+    <label class="span-2">
+      批次（每行：批次号,净额分；顺序即交款单顺序）
+      <textarea name="batches_text" rows="6" spellcheck="false" required
+                placeholder="B001,12800&#10;B002,-3500&#10;B003,900">{{ prefill.batches_text }}</textarea>
+      <span class="field-hint">净额为整数分，可为负。每个批次必须占据至少一个小时。</span>
+    </label>
+
+    <fieldset class="span-2">
+      <legend>已查实的截止小时（可选）</legend>
+      <label>
+        批次序号（从 1 开始）
+        <input type="number" name="pinned_batch" value="{{ prefill.pinned_batch }}" min="1" max="100">
+        <span class="field-hint">按录入顺序的第几批</span>
+      </label>
+      <label>
+        该批最后一个小时
+        <input type="number" name="pinned_hour" value="{{ prefill.pinned_hour }}" min="0" max="23">
+        <span class="field-hint">已知某批在此小时截账时填写，可缩小解集；无解时会提示。</span>
+      </label>
+    </fieldset>
+
+    <div class="form-actions span-2">
+      <button type="submit" name="action" value="calculate">计算对账方案</button>
+    </div>
+  </form>
+
+  {% if result %}
+    {% set report = result[0] %}
+    {% set analysis = result[1] %}
+    <div class="card">
+      <div class="compare-meta">
+        <span>
+          <strong>{{ report.store_code }} · {{ report.store_name }}</strong>
+          {{ report.business_date }}（{{ report.weekday }}）·
+          日报修订号 <strong id="report-revision">{{ report.revision }}</strong> ·
+          计算范围 {{ analysis.selected_hours[0] }}:00–{{ analysis.selected_hours[-1] }}:00
+          （共 {{ analysis.selected_hours | length }} 小时）
+        </span>
+      </div>
+
+      {% if analysis.stopped_for_missing %}
+        <div class="alert alert-error" role="alert">
+          <strong>以下所选小时尚未报齐，已停止对账：</strong>
+          {{ analysis.missing_hours | hours }}。
+          请先导入或更正日报，补报这些小时后再计算。
+        </div>
+      {% elif not analysis.has_solution %}
+        <div class="alert alert-error" role="alert">
+          无解：按当前批次顺序与净额，无法把所选小时切成每批一段连续小时且段内销售额等于净额。
+          请核对批次金额，或填写已查实的截止小时后重算。
+        </div>
+      {% endif %}
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col" class="num">序号</th>
+              <th scope="col">批次号</th>
+              <th scope="col" class="num">净额（元）</th>
+              <th scope="col">可能的最后一个小时</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for candidate in analysis.candidates %}
+              <tr {% if not candidate.end_hours %}class="row-muted"{% endif %}>
+                <td class="num">{{ candidate.position }}</td>
+                <td>{{ candidate.batch_no }}</td>
+                <td class="num">{{ candidate.amount_cents | yuan }}</td>
+                <td>
+                  {% if candidate.end_hours %}
+                    {% for hour in candidate.end_hours %}
+                      <span class="chip">{{ hour }}:00</span>
+                    {% endfor %}
+                  {% else %}
+                    <span class="missing">无</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="hint">「可能的最后一个小时」列出该批在所有完整对账方案中可能覆盖到的最后小时。</p>
+
+      {% if analysis.unique %}
+        <h2>完整对账方案（唯一）</h2>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col" class="num">序号</th>
+                <th scope="col">批次号</th>
+                <th scope="col">覆盖小时</th>
+                <th scope="col" class="num">小时数</th>
+                <th scope="col" class="num">段内销售额（元）</th>
+                <th scope="col" class="num">批次净额（元）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for segment in analysis.plan %}
+                <tr>
+                  <td class="num">{{ segment.position }}</td>
+                  <td>{{ segment.batch_no }}</td>
+                  <td>{{ segment.start_hour }}:00{% if segment.end_hour != segment.start_hour %}–{{ segment.end_hour }}:00{% endif %}</td>
+                  <td class="num">{{ segment.hour_count }}</td>
+                  <td class="num">{{ segment.sales_cents | yuan }}</td>
+                  <td class="num">{{ segment.amount_cents | yuan }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <form method="post" action="{{ url_for('main.reconcile_submit') }}" class="actions">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="store_code" value="{{ prefill.store_code }}">
+          <input type="hidden" name="business_date" value="{{ prefill.business_date }}">
+          <input type="hidden" name="start_hour" value="{{ prefill.start_hour }}">
+          <input type="hidden" name="end_hour" value="{{ prefill.end_hour }}">
+          <input type="hidden" name="batches_text" value="{{ prefill.batches_text }}">
+          <input type="hidden" name="pinned_batch" value="{{ prefill.pinned_batch }}">
+          <input type="hidden" name="pinned_hour" value="{{ prefill.pinned_hour }}">
+          <input type="hidden" name="expected_revision" value="{{ expected_revision }}">
+          <input type="hidden" name="action" value="save">
+          <button type="submit">保存该门店日的对账结果</button>
+        </form>
+        <p class="hint">只有切分唯一、且日报仍是页面所示修订号（{{ expected_revision }}）时才能保存或覆盖。</p>
+      {% elif analysis.has_solution %}
+        <p class="empty">切分不唯一（存在多种完整方案），不能保存。请补充已查实的截止小时后重算。</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if stored %}
+    <div class="card">
+      <h2>已存对账结果</h2>
+      <div class="compare-meta">
+        <span>保存时的日报修订号：<strong>{{ stored.report_revision }}</strong></span>
+        <span>当前日报修订号：<strong>{{ stored.current_revision if stored.current_revision is not none else "—" }}</strong></span>
+        {% if stored.needs_review %}
+          <span class="badge badge-warn">{{ stored.status_text }}</span>
+        {% else %}
+          <span class="badge badge-ok">{{ stored.status_text }}</span>
+        {% endif %}
+      </div>
+      {% if stored.needs_review %}
+        <div class="alert alert-warn" role="status">
+          日报已更正，原对账结果保留并标为待复核；如需更新，请在当前修订号上重新计算并保存。
+        </div>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th scope="col" class="num">序号</th>
+              <th scope="col">批次号</th>
+              <th scope="col" class="num">净额（元）</th>
+              <th scope="col">覆盖小时</th>
+              <th scope="col" class="num">小时数</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for batch in stored.batches %}
+              <tr>
+                <td class="num">{{ batch.position }}</td>
+                <td>{{ batch.batch_no }}</td>
+                <td class="num">{{ batch.amount_cents | yuan }}</td>
+                <td>{{ batch.start_hour }}:00{% if batch.end_hour != batch.start_hour %}–{{ batch.end_hour }}:00{% endif %}</td>
+                <td class="num">{{ batch.hour_count }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="actions">
+    <a class="button-secondary" href="{{ url_for('main.reconciliation_list') }}">查看全部已存对账</a>
+    <a class="button-secondary" href="{{ url_for('main.index') }}">返回日报列表</a>
+  </div>
+{% endblock %}

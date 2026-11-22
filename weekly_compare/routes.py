@@ -15,8 +15,8 @@ from flask import (
     url_for,
 )
 
-from . import comparison, db, security, services
-from .errors import AppError, ImportRejected, NotFound
+from . import comparison, db, reconciliation, security, services
+from .errors import AppError, ImportRejected, NotFound, ReportChanged
 
 bp = Blueprint("main", __name__)
 
@@ -264,6 +264,204 @@ def compare_page():
         date_b=date_b,
         result=result,
         error=error,
+    )
+
+
+def _stored_from_prefill(prefill: dict) -> reconciliation.StoredReconciliation | None:
+    """Look up an existing result for the form's store/date, if both parse."""
+
+    if not prefill.get("store_code") or not prefill.get("business_date"):
+        return None
+    try:
+        day = services.parse_date(prefill["business_date"]).isoformat()
+    except ImportRejected:
+        return None
+    return reconciliation.get_reconciliation(
+        _db_path(), prefill["store_code"], day
+    )
+
+
+@bp.get("/reconcile")
+def reconcile_page():
+    """Calculation form.  Results are rendered by the same page after POST."""
+
+    stores = services.list_stores(_db_path())
+    prefill = {
+        "store_code": request.args.get("store_code", "").strip(),
+        "business_date": request.args.get("business_date", "").strip(),
+        "start_hour": request.args.get("start_hour", "").strip(),
+        "end_hour": request.args.get("end_hour", "").strip(),
+        "batches_text": "",
+        "pinned_batch": "",
+        "pinned_hour": "",
+    }
+    stored = _stored_from_prefill(prefill)
+    if stored is not None:
+        # Opening an existing record pre-fills the hours and batch order so the
+        # finance user can review or recompute without retyping the slip.
+        if not prefill["start_hour"]:
+            prefill["start_hour"] = str(stored.start_hour)
+        if not prefill["end_hour"]:
+            prefill["end_hour"] = str(stored.end_hour)
+        if not prefill["batches_text"]:
+            prefill["batches_text"] = "\n".join(
+                f"{batch.batch_no},{batch.amount_cents}" for batch in stored.batches
+            )
+    return render_template(
+        "reconcile.html",
+        title="交款单对账",
+        stores=stores,
+        prefill=prefill,
+        errors=[],
+        result=None,
+        stored=stored,
+        expected_revision=None,
+    )
+
+
+@bp.post("/reconcile")
+def reconcile_submit():
+    form = request.form
+    prefill = {
+        "store_code": form.get("store_code", ""),
+        "business_date": form.get("business_date", ""),
+        "start_hour": form.get("start_hour", ""),
+        "end_hour": form.get("end_hour", ""),
+        "batches_text": form.get("batches_text", ""),
+        "pinned_batch": form.get("pinned_batch", ""),
+        "pinned_hour": form.get("pinned_hour", ""),
+    }
+    stores = services.list_stores(_db_path())
+
+    def render(stored, errors, result=None, expected_revision=None, status=200):
+        return (
+            render_template(
+                "reconcile.html",
+                title="交款单对账",
+                stores=stores,
+                prefill=prefill,
+                errors=errors,
+                result=result,
+                stored=stored,
+                expected_revision=expected_revision,
+            ),
+            status,
+        )
+
+    try:
+        recon_request = reconciliation.parse_request(
+            store_code=form.get("store_code", ""),
+            business_date=form.get("business_date", ""),
+            start_hour=form.get("start_hour", ""),
+            end_hour=form.get("end_hour", ""),
+            batches_text=form.get("batches_text", ""),
+            pinned_batch=form.get("pinned_batch", ""),
+            pinned_hour=form.get("pinned_hour", ""),
+        )
+    except AppError as err:
+        return render(_stored_from_prefill(prefill), [err.message], status=err.http_status)
+
+    try:
+        report, _hours, _complete, analysis = reconciliation.analyse_report(
+            _db_path(), recon_request
+        )
+    except AppError as err:
+        stored = _stored_from_prefill(prefill)
+        return render(stored, [err.message], status=err.http_status)
+
+    stored = _stored_from_prefill(prefill)
+
+    if form.get("action") == "save":
+        expected_raw = form.get("expected_revision", "").strip()
+        try:
+            expected_revision = int(expected_raw)
+        except ValueError:
+            return render(
+                stored,
+                ["缺少页面显示的日报修订号，请重新计算后再保存。"],
+                result=(report, analysis),
+                status=422,
+            )
+        try:
+            saved = reconciliation.save_reconciliation(
+                _db_path(), recon_request, expected_revision=expected_revision
+            )
+        except ReportChanged as err:
+            # The report moved on after the page was rendered.  Force a fresh
+            # calculation rather than offering a save button for numbers the
+            # user has not reviewed; the old record stays as it was.
+            return render(stored, [err.message], status=err.http_status)
+        except AppError as err:
+            return render(
+                stored,
+                [err.message],
+                result=(report, analysis),
+                expected_revision=expected_revision,
+                status=err.http_status,
+            )
+        flash(
+            f"已保存 {saved.store_code} {saved.business_date} 的交款单对账结果"
+            f"（日报修订号 {saved.report_revision}）。",
+            "success",
+        )
+        return redirect(
+            url_for(
+                "main.reconcile_page",
+                store_code=saved.store_code,
+                business_date=saved.business_date,
+            )
+        )
+
+    return render(
+        stored,
+        [],
+        result=(report, analysis),
+        expected_revision=report.revision,
+    )
+
+
+@bp.get("/reconciliations")
+def reconciliation_list():
+    records = reconciliation.list_reconciliations(_db_path())
+    return render_template(
+        "reconciliations.html",
+        title="已存对账结果",
+        records=records,
+    )
+
+
+@bp.get("/api/reconciliations")
+def api_reconciliations():
+    records = reconciliation.list_reconciliations(_db_path())
+    return jsonify(
+        {
+            "ok": True,
+            "reconciliations": [
+                {
+                    "store_code": rec.store_code,
+                    "store_name": rec.store_name,
+                    "business_date": rec.business_date,
+                    "weekday": rec.weekday,
+                    "report_revision": rec.report_revision,
+                    "current_revision": rec.current_revision,
+                    "needs_review": rec.needs_review,
+                    "start_hour": rec.start_hour,
+                    "end_hour": rec.end_hour,
+                    "updated_at": rec.updated_at,
+                    "batches": [
+                        {
+                            "position": batch.position,
+                            "batch_no": batch.batch_no,
+                            "amount_cents": batch.amount_cents,
+                            "start_hour": batch.start_hour,
+                            "end_hour": batch.end_hour,
+                        }
+                        for batch in rec.batches
+                    ],
+                }
+                for rec in records
+            ],
+        }
     )
 
 
